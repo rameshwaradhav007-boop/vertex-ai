@@ -1,210 +1,695 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vertex AI: Fake News Detection</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vertex AI: Fake News Detection</title>
+    <!-- Tailwind CSS is used for rapid, utility-first styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Import a clean, modern font from Google Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        
+        /* --- Base Styles --- */
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden; /* Prevents horizontal scrolling */
+        }
+        .hidden { display: none; }
 
-<script src="https://cdn.tailwindcss.com"></script>
+        /* --- Background Canvas --- */
+        #particle-canvas {
+            position: fixed; /* Stays in place during scroll */
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0; /* Places it behind all other content */
+        }
+        .content-wrapper {
+            position: relative; /* Ensures this content appears on top of the canvas */
+            z-index: 1;
+        }
 
-<!-- ✅ Firebase SDK -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getAuth,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        /* --- Logo Animation --- */
+        @keyframes draw { to { stroke-dashoffset: 0; } }
+        .v-path {
+            stroke-dasharray: 150;
+            stroke-dashoffset: 150;
+            animation: draw 2s ease-in-out forwards;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .text-fade {
+            animation: fadeIn 2s ease-in-out 1s forwards;
+            opacity: 0;
+        }
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBXqWhgcJISqsruhsK-pTzOZfqYhUW55gk",
-  authDomain: "vertex-ai-c96eb.firebaseapp.com",
-  projectId: "vertex-ai-c96eb",
-  storageBucket: "vertex-ai-c96eb.firebasestorage.app",
-  messagingSenderId: "785987748963",
-  appId: "1:785987748963:web:0508f3e8c650bf5b622456",
-  measurementId: "G-69HWT1KK0M"
-};
+        /* --- Carousel Animation --- */
+        .carousel-item {
+            /* Smooth transitions for transform, opacity, and the new blur filter */
+            transition: transform 0.7s ease-in-out, opacity 0.7s ease-in-out, filter 0.7s ease-in-out;
+        }
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-
-// Make global
-window.firebaseAuth = auth;
-window.firebaseFns = {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged
-};
-</script>
-
-<style>
-body { font-family: 'Inter', sans-serif; }
-.hidden { display:none; }
-</style>
+        /* --- Spinner Animation --- */
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 </head>
-
 <body class="bg-gray-900 text-white">
 
-<!-- ================= UI SAME AS YOURS ================= -->
-<div id="auth-section" class="flex items-center justify-center min-h-screen">
-  <div id="login-form-container"></div>
-  <div id="register-form-container" class="hidden"></div>
-</div>
+    <!-- The canvas element for the animated particle background -->
+    <canvas id="particle-canvas"></canvas>
 
-<div id="main-app" class="hidden">
-  <button id="logout-btn">Logout</button>
+    <!-- A wrapper to ensure all content is layered on top of the background canvas -->
+    <div class="content-wrapper">
+        <!-- Authentication Section: Contains login and registration forms. Visible only when logged out. -->
+        <div id="auth-section" class="flex items-center justify-center min-h-screen p-4">
+            <div id="login-form-container" class="w-full max-w-md">
+                <!-- Login Form will be injected here by JavaScript -->
+            </div>
+            <div id="register-form-container" class="w-full max-w-md hidden">
+                <!-- Register Form will be injected here by JavaScript -->
+            </div>
+        </div>
 
-  <input id="url-input" placeholder="Enter URL" class="text-black"/>
-  <button id="analyze-btn">Analyze</button>
+        <!-- Main App Section: The core application interface. Visible only when logged in. -->
+        <div id="main-app" class="hidden w-full min-h-screen">
+            <header class="flex justify-between items-center p-4 sm:p-8">
+                <div id="main-logo-container"></div>
+                <button id="logout-btn" class="bg-gray-700/50 border border-gray-600 px-4 py-2 rounded-lg transition-all duration-300 hover:bg-gray-600 hover:scale-105 active:scale-95">
+                    Logout
+                </button>
+            </header>
+            <main class="max-w-4xl mx-auto p-4 sm:p-8">
+                <!-- Logo is placed here, above the carousel, for brand prominence -->
+                <div id="main-page-logo-container" class="flex justify-center mb-8"></div>
+                
+                <!-- Carousel for displaying app features -->
+                <div id="carousel-container" class="relative w-full h-80 flex items-center justify-center overflow-hidden"></div>
+                
+                <!-- Main analysis card -->
+                <div class="mt-12 p-8 bg-gray-800/60 backdrop-blur-lg rounded-2xl shadow-2xl border border-gray-700">
+                    <div class="text-center mb-6">
+                        <h2 class="text-3xl font-bold">Analyze News Content</h2>
+                        <p class="text-indigo-300 font-semibold">Powered by Advanced AI</p>
+                    </div>
+                    <!-- Buttons to switch between input types (Article, Screenshot, Video) -->
+                    <div class="flex justify-center space-x-2 md:space-x-4 mb-6">
+                        <button id="url-btn" class="px-4 md:px-6 py-2 rounded-lg font-semibold transition-all duration-300 bg-indigo-600 text-white">Article URL</button>
+                        <button id="image-btn" class="px-4 md:px-6 py-2 rounded-lg font-semibold transition-all duration-300 bg-gray-700 text-gray-300">Screenshot</button>
+                        <button id="video-btn" class="px-4 md:px-6 py-2 rounded-lg font-semibold transition-all duration-300 bg-gray-700 text-gray-300">Video URL</button>
+                    </div>
+                    <!-- Container for the different input fields -->
+                    <div id="input-container">
+                        <div id="url-input-container">
+                            <input type="text" id="url-input" placeholder="https://example.com/news-article" class="w-full pl-4 pr-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 transition-colors">
+                        </div>
+                        <div id="image-input-container" class="hidden">
+                            <button id="image-upload-btn" class="w-full flex flex-col items-center justify-center py-6 border-2 border-dashed border-gray-600 rounded-lg hover:bg-gray-700/50 transition-colors">
+                                <input type="file" id="file-input" accept="image/*" class="hidden" />
+                                <div id="image-preview-container">
+                                    <p>Click to upload or <span class="font-bold text-indigo-300">paste</span> a screenshot</p>
+                                </div>
+                            </button>
+                        </div>
+                         <div id="video-input-container" class="hidden">
+                            <input type="text" id="video-url-input" placeholder="https://youtube.com/watch?v=..." class="w-full pl-4 pr-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 transition-colors">
+                        </div>
+                    </div>
+                    <button id="analyze-btn" class="w-full mt-6 bg-indigo-600 text-white font-bold py-3 rounded-lg transition-all duration-300 hover:bg-indigo-700 hover:scale-105 active:scale-95 disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center">
+                        Analyze
+                    </button>
+                </div>
+                <!-- Container where analysis results will be displayed -->
+                <div id="results-container" class="mt-8"></div>
+                <!-- Container for the "Power of AI" informational section -->
+                <div id="ai-importance-container" class="mt-8"></div>
+            </main>
+        </div>
+    </div>
 
-  <div id="results-container"></div>
-</div>
+    <script>
+        // Wait for the entire HTML document to be loaded before running the script
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            // --- PARTICLE BACKGROUND SCRIPT ---
+            const canvas = document.getElementById('particle-canvas');
+            const ctx = canvas.getContext('2d');
+            let particles = [];
 
-<script>
-document.addEventListener('DOMContentLoaded', () => {
+            // Function to set canvas to full screen size
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas); // Adjust canvas on window resize
 
-let state = {
-  isLoggedIn: false,
-  isLoginView: true,
-  result:null
-};
+            // Particle class defines the behavior and appearance of each particle
+            class Particle {
+                constructor() {
+                    this.x = Math.random() * canvas.width;
+                    this.y = Math.random() * canvas.height;
+                    this.vx = Math.random() * 1 - 0.5; // Horizontal velocity
+                    this.vy = Math.random() * 1 - 0.5; // Vertical velocity
+                    this.radius = Math.random() * 1.5 + 1;
+                    this.color = 'rgba(139, 92, 246, 0.8)';
+                }
 
-const authSection = document.getElementById('auth-section');
-const mainApp = document.getElementById('main-app');
-const loginFormContainer = document.getElementById('login-form-container');
-const registerFormContainer = document.getElementById('register-form-container');
-const logoutBtn = document.getElementById('logout-btn');
+                // Update particle position and bounce off edges
+                update() {
+                    this.x += this.vx;
+                    this.y += this.vy;
+                    if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+                    if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+                }
 
-const loginTemplate = `
-<div>
-  <h2>Login</h2>
-  <input id="login-email" placeholder="Email"/>
-  <input id="login-password" type="password" placeholder="Password"/>
-  <button id="login-submit">Login</button>
-  <button id="show-register">Register</button>
-</div>`;
+                // Draw the particle on the canvas
+                draw() {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+                }
+            }
 
-const registerTemplate = `
-<div>
-  <h2>Register</h2>
-  <input id="register-email" placeholder="Email"/>
-  <input id="register-password" type="password" placeholder="Password"/>
-  <button id="register-submit">Create Account</button>
-  <button id="show-login">Login</button>
-</div>`;
+            // Create a set of particles based on screen size
+            function createParticles() {
+                particles = [];
+                const particleCount = Math.floor((canvas.width * canvas.height) / 15000);
+                for (let i = 0; i < particleCount; i++) {
+                    particles.push(new Particle());
+                }
+            }
+            createParticles();
+            window.addEventListener('resize', createParticles); // Recreate particles on resize
 
-function render(){
-  if(state.isLoggedIn){
-    authSection.classList.add('hidden');
-    mainApp.classList.remove('hidden');
-  }else{
-    authSection.classList.remove('hidden');
-    mainApp.classList.add('hidden');
+            // Draw lines between nearby particles to create the constellation effect
+            function connectParticles() {
+                for (let i = 0; i < particles.length; i++) {
+                    for (let j = i; j < particles.length; j++) {
+                        const dx = particles[i].x - particles[j].x;
+                        const dy = particles[i].y - particles[j].y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
 
-    if(state.isLoginView){
-      loginFormContainer.innerHTML = loginTemplate;
-      registerFormContainer.classList.add('hidden');
-      loginFormContainer.classList.remove('hidden');
-    }else{
-      registerFormContainer.innerHTML = registerTemplate;
-      loginFormContainer.classList.add('hidden');
-      registerFormContainer.classList.remove('hidden');
-    }
-    addAuthListeners();
-  }
-}
+                        // If particles are close enough, draw a line between them
+                        if (distance < 120) {
+                            ctx.beginPath();
+                            ctx.strokeStyle = `rgba(99, 102, 241, ${1 - distance / 120})`; // Line fades with distance
+                            ctx.lineWidth = 0.5;
+                            ctx.moveTo(particles[i].x, particles[i].y);
+                            ctx.lineTo(particles[j].x, particles[j].y);
+                            ctx.stroke();
+                        }
+                    }
+                }
+            }
 
-function addAuthListeners(){
+            // The main animation loop
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas each frame
+                particles.forEach(p => {
+                    p.update();
+                    p.draw();
+                });
+                connectParticles();
+                requestAnimationFrame(animate); // Request the next frame
+            }
+            animate();
 
-document.getElementById('show-register')?.addEventListener('click',()=>{
-  state.isLoginView=false;
-  render();
-});
+            // --- TEMPLATES (HTML strings to be injected into the DOM) ---
+            const logoTemplate = `
+                <svg class="h-12 w-auto" viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color: #6366F1; stop-opacity: 1" />
+                            <stop offset="100%" style="stop-color: #8B5CF6; stop-opacity: 1" />
+                        </linearGradient>
+                    </defs>
+                    <path class="v-path" d="M10 10 L25 40 L40 10" stroke="url(#logoGradient)" strokeWidth="4" fill="none" />
+                    <text x="50" y="32" font-family="Inter, sans-serif" font-size="24" font-weight="bold" fill="url(#logoGradient)" class="text-fade">Vertex AI</text>
+                </svg>`;
 
-document.getElementById('show-login')?.addEventListener('click',()=>{
-  state.isLoginView=true;
-  render();
-});
+            const loginTemplate = `
+                <div class="w-full max-w-md bg-gray-800/60 backdrop-blur-lg rounded-2xl shadow-2xl p-8 flex flex-col justify-center border border-gray-700">
+                    ${logoTemplate}
+                    <h2 class="text-3xl font-bold text-white text-center my-8">Welcome Back</h2>
+                    <form class="space-y-6">
+                        <input type="email" placeholder="Email" class="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 transition-all duration-300 text-white placeholder-gray-400" />
+                        <input type="password" placeholder="Password" class="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 transition-all duration-300 text-white placeholder-gray-400" />
+                        <button type="button" id="login-submit" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg transition-all duration-300 hover:bg-indigo-700 hover:scale-105 active:scale-95">Login</button>
+                    </form>
+                    <p class="text-center text-gray-400 mt-6">
+                        Don't have an account? <button id="show-register" class="font-semibold text-indigo-400 hover:text-indigo-300">Register</button>
+                    </p>
+                </div>`;
 
-document.getElementById('login-submit')?.addEventListener('click', async ()=>{
-  const email = document.getElementById('login-email').value;
-  const password = document.getElementById('login-password').value;
+            const registerTemplate = `
+                <div class="w-full max-w-md bg-gray-800/60 backdrop-blur-lg rounded-2xl shadow-2xl p-8 flex flex-col justify-center border border-gray-700">
+                    ${logoTemplate}
+                    <h2 class="text-3xl font-bold text-white text-center my-8">Create Account</h2>
+                    <form class="space-y-6">
+                        <input type="text" placeholder="Full Name" class="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-violet-500 transition-all duration-300 text-white placeholder-gray-400" />
+                        <input type="email" placeholder="Email" class="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-violet-500 transition-all duration-300 text-white placeholder-gray-400" />
+                        <input type="password" placeholder="Password" class="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-violet-500 transition-all duration-300 text-white placeholder-gray-400" />
+                        <button type="button" id="register-submit" class="w-full bg-violet-600 text-white font-bold py-3 rounded-lg transition-all duration-300 hover:bg-violet-700 hover:scale-105 active:scale-95">Register</button>
+                    </form>
+                    <p class="text-center text-gray-400 mt-6">
+                        Already have an account? <button id="show-login" class="font-semibold text-violet-400 hover:text-violet-300">Login</button>
+                    </p>
+                </div>`;
+            
+            const carouselItems = [
+                { id: 1, title: "Deepfake Detection", description: "Analyze videos and images for signs of AI manipulation.", image: "https://placehold.co/600x400/3B3B98/FFFFFF?text=Deepfake" },
+                { id: 2, title: "Source Credibility", description: "Evaluate the reputation and bias of news sources.", image: "https://placehold.co/600x400/1B9CFC/FFFFFF?text=Credibility" },
+                { id: 3, title: "Fact-Checking", description: "Cross-reference claims with trusted databases.", image: "https://placehold.co/600x400/F96167/FFFFFF?text=Fact-Check" },
+                { id: 4, title: "Sentiment Analysis", description: "Understand the emotional tone of news articles.", image: "https://placehold.co/600x400/45CE30/FFFFFF?text=Sentiment" },
+            ];
 
-  try{
-    await window.firebaseFns.signInWithEmailAndPassword(window.firebaseAuth,email,password);
-    state.isLoggedIn = true;
-    render();
-  }catch(err){
-    alert(err.message);
-  }
-});
+            // --- STATE MANAGEMENT OBJECT ---
+            // This object holds all the important data for the application.
+            // It's the "single source of truth".
+            let state = {
+                isLoggedIn: false,
+                isLoginView: true,
+                inputType: 'url',
+                url: '',
+                videoUrl: '',
+                imageFile: null,
+                imagePreview: null,
+                isLoading: false,
+                result: null,
+                originalContent: '',
+                activeIndex: 0,
+            };
 
-document.getElementById('register-submit')?.addEventListener('click', async ()=>{
-  const email = document.getElementById('register-email').value;
-  const password = document.getElementById('register-password').value;
+            // --- DOM ELEMENT REFERENCES ---
+            // Getting references to all the important HTML elements once for efficiency.
+            const authSection = document.getElementById('auth-section');
+            const mainApp = document.getElementById('main-app');
+            const loginFormContainer = document.getElementById('login-form-container');
+            const registerFormContainer = document.getElementById('register-form-container');
+            const mainLogoContainer = document.getElementById('main-logo-container');
+            const mainPageLogoContainer = document.getElementById('main-page-logo-container');
+            const carouselContainer = document.getElementById('carousel-container');
+            const logoutBtn = document.getElementById('logout-btn');
+            const urlBtn = document.getElementById('url-btn');
+            const imageBtn = document.getElementById('image-btn');
+            const videoBtn = document.getElementById('video-btn');
+            const urlInputContainer = document.getElementById('url-input-container');
+            const imageInputContainer = document.getElementById('image-input-container');
+            const videoInputContainer = document.getElementById('video-input-container');
+            const urlInput = document.getElementById('url-input');
+            const videoUrlInput = document.getElementById('video-url-input');
+            const fileInput = document.getElementById('file-input');
+            const imageUploadBtn = document.getElementById('image-upload-btn');
+            const imagePreviewContainer = document.getElementById('image-preview-container');
+            const analyzeBtn = document.getElementById('analyze-btn');
+            const resultsContainer = document.getElementById('results-container');
+            const aiImportanceContainer = document.getElementById('ai-importance-container');
 
-  try{
-    await window.firebaseFns.createUserWithEmailAndPassword(window.firebaseAuth,email,password);
-    state.isLoggedIn = true;
-    render();
-  }catch(err){
-    alert(err.message);
-  }
-});
-}
+            // --- RENDER FUNCTION ---
+            // This is the main function that updates the UI based on the current state.
+            function render() {
+                if (state.isLoggedIn) {
+                    authSection.classList.add('hidden');
+                    mainApp.classList.remove('hidden');
+                    mainLogoContainer.innerHTML = logoTemplate;
+                    mainPageLogoContainer.innerHTML = logoTemplate;
+                    renderCarousel();
+                } else {
+                    authSection.classList.remove('hidden');
+                    mainApp.classList.add('hidden');
+                    if (state.isLoginView) {
+                        loginFormContainer.innerHTML = loginTemplate;
+                        registerFormContainer.classList.add('hidden');
+                        loginFormContainer.classList.remove('hidden');
+                    } else {
+                        registerFormContainer.innerHTML = registerTemplate;
+                        loginFormContainer.classList.add('hidden');
+                        registerFormContainer.classList.remove('hidden');
+                    }
+                    addAuthListeners();
+                }
+            }
+            
+            // Function to specifically render the carousel based on the active index
+            function renderCarousel() {
+                let carouselHTML = '';
+                carouselItems.forEach((item, index) => {
+                    const isActive = index === state.activeIndex;
+                    const blur = isActive ? 'blur(0px)' : 'blur(3px)';
+                    const style = `transform: translateX(${(index - state.activeIndex) * 100}%) scale(${isActive ? 1 : 0.8}); opacity: ${isActive ? 1 : 0.5}; filter: ${blur}; z-index: ${carouselItems.length - Math.abs(index - state.activeIndex)};`;
+                    carouselHTML += `
+                        <div class="absolute w-3/4 h-full carousel-item" style="${style}">
+                            <div class="relative w-full h-full rounded-2xl overflow-hidden shadow-2xl bg-gray-700">
+                                <img src="${item.image}" alt="${item.title}" class="absolute inset-0 w-full h-full object-cover" onerror="this.onerror=null;this.src='https://placehold.co/600x400/CCCCCC/FFFFFF?text=Image+Not+Found';">
+                                <div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
+                                <div class="absolute bottom-0 left-0 p-6 text-white">
+                                    <h3 class="text-2xl font-bold">${item.title}</h3>
+                                    <p class="mt-2 text-gray-300">${item.description}</p>
+                                </div>
+                            </div>
+                        </div>`;
+                });
+                carouselContainer.innerHTML = carouselHTML;
+            }
 
-// logout
-logoutBtn.addEventListener('click', async ()=>{
-  await window.firebaseFns.signOut(window.firebaseAuth);
-  state.isLoggedIn=false;
-  render();
-});
+            // --- EVENT LISTENERS SETUP ---
+            // This function attaches event listeners to the buttons on the auth forms.
+            function addAuthListeners() {
+                document.getElementById('show-register')?.addEventListener('click', () => { state.isLoginView = false; render(); });
+                document.getElementById('show-login')?.addEventListener('click', () => { state.isLoginView = true; render(); });
+                document.getElementById('login-submit')?.addEventListener('click', () => { state.isLoggedIn = true; render(); });
+                document.getElementById('register-submit')?.addEventListener('click', () => { state.isLoggedIn = true; render(); });
+            }
+            
+            // Logout button resets the state to its initial values.
+            logoutBtn.addEventListener('click', () => {
+                state = { ...state, isLoggedIn: false, isLoginView: true, result: null, originalContent: '', url: '', videoUrl: '', imageFile: null, imagePreview: null };
+                urlInput.value = '';
+                videoUrlInput.value = '';
+                fileInput.value = '';
+                imagePreviewContainer.innerHTML = '<p>Click to upload or <span class="font-bold text-indigo-300">paste</span> a screenshot</p>';
+                resultsContainer.innerHTML = '';
+                aiImportanceContainer.innerHTML = '';
+                render();
+            });
 
-// keep session
-window.firebaseFns.onAuthStateChanged(window.firebaseAuth,(user)=>{
-  if(user){
-    state.isLoggedIn=true;
-  }else{
-    state.isLoggedIn=false;
-  }
-  render();
-});
+            // Function to handle switching between input tabs (URL, Image, Video)
+            function setActiveInput(type) {
+                state.inputType = type;
+                const buttons = { url: urlBtn, image: imageBtn, video: videoBtn };
+                const containers = { url: urlInputContainer, image: imageInputContainer, video: videoInputContainer };
 
+                for (const key in buttons) {
+                    if (key === type) {
+                        buttons[key].classList.add('bg-indigo-600', 'text-white');
+                        buttons[key].classList.remove('bg-gray-700', 'text-gray-300');
+                        containers[key].classList.remove('hidden');
+                    } else {
+                        buttons[key].classList.remove('bg-indigo-600', 'text-white');
+                        buttons[key].classList.add('bg-gray-700', 'text-gray-300');
+                        containers[key].classList.add('hidden');
+                    }
+                }
+            }
 
-// ================= GEMINI (same as yours) =================
-async function analyzeContent(){
-  const url = document.getElementById('url-input').value;
+            urlBtn.addEventListener('click', () => setActiveInput('url'));
+            imageBtn.addEventListener('click', () => setActiveInput('image'));
+            videoBtn.addEventListener('click', () => setActiveInput('video'));
 
-  const apiKey = "AIzaSyAJZmtyKuK3oLFuIniioeD7aIyk81TbihI"; // your Gemini key
+            // Opens the file dialog when the upload area is clicked
+            imageUploadBtn.addEventListener('click', () => fileInput.click());
 
-  const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key="+apiKey,
-    {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({
-        contents:[{
-          parts:[{text:"Analyze news: "+url}]
-        }]
-      })
-    }
-  );
+            // Handles image selection from the file dialog
+            fileInput.addEventListener('change', (e) => {
+                handleImageFile(e.target.files[0]);
+            });
 
-  const data = await response.json();
-  document.getElementById('results-container').innerText =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
-}
+            // Handles pasting an image from the clipboard
+            document.addEventListener('paste', (e) => {
+                if (state.inputType !== 'image') return; // Only works when screenshot tab is active
+                e.preventDefault();
+                const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                for (const item of items) {
+                    if (item.kind === 'file' && item.type.startsWith('image/')) {
+                        const file = item.getAsFile();
+                        handleImageFile(file);
+                        break;
+                    }
+                }
+            });
 
-document.getElementById('analyze-btn').addEventListener('click', analyzeContent);
+            // A helper function to process an image file (from either upload or paste)
+            function handleImageFile(file) {
+                if (file) {
+                    state.imageFile = file;
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        state.imagePreview = reader.result;
+                        imagePreviewContainer.innerHTML = `<img src="${state.imagePreview}" alt="Preview" class="max-h-40 rounded-lg" />`;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }
+            
+            analyzeBtn.addEventListener('click', analyzeContent);
+            
+            // --- API & LOGIC ---
+            // Converts an image file to a Base64 string for the API request
+            const toBase64 = file => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = error => reject(error);
+            });
+            
+            // A single, reusable function to call the Gemini API
+            async function callGeminiAPI(requestBody) {
+                const apiKey = ""; // Injected by environment
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody)
+                    });
+                    if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
+                    const data = await response.json();
+                    return data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                } catch (error) {
+                    console.error("Error calling Gemini API:", error);
+                    return `Error: Could not fetch response. ${error.message}`;
+                }
+            }
 
-render();
+            // This is the "prompt engineering" part. It creates a detailed, multi-step instruction set for the AI.
+            function getAnalysisPrompt(content, type) {
+                let analysisContext = '';
+                if (type === 'url') {
+                    analysisContext = `Here is the content to analyze: URL: ${content}`;
+                } else if (type === 'video') {
+                     analysisContext = `You will be given a URL to a video. You cannot watch the video directly, but you must perform a rigorous analysis based on all available metadata (title, description, channel/source). Here is the content to analyze: URL: ${content}`;
+                } else {
+                    analysisContext = `Here is the content to analyze: Content from the attached screenshot.`;
+                }
 
-});
-</script>
+                return `You are a meticulous fact-checker. Analyze the following content and follow these steps:
+1.  **Source Analysis:** Evaluate the credibility of the source (channel for videos, website for URLs). Is it a reputable news organization, a known biased source, or an unknown entity?
+2.  **Claim Verification:** Identify the main claims from the text or video metadata. Search for corroboration from at least two other independent, reputable news sources. State whether the claims are widely reported or unverified.
+3.  **Evidence Check:** Assess the evidence presented in the text or described in the video metadata. Does it cite verifiable data, named sources, or expert quotes? Or does it rely on anonymous sources or emotional appeals?
+4.  **Tone and Bias:** Analyze the language. Is it objective and neutral, or is it sensationalized, emotionally charged, or clearly biased?
 
+Based on your analysis of these four points, provide a final verdict. The output MUST be in the following format, and nothing else:
+
+Verdict: "Likely True", "Misleading", or "Likely False"
+Summary: "A one-sentence, neutral summary of the main news claim."
+Key Findings:
+1. [Finding 1 based on your analysis]
+2. [Finding 2 based on your analysis]
+3. [Finding 3 based on your analysis]
+
+${analysisContext}`;
+            }
+
+            // Main function to handle the analysis process
+            async function analyzeContent() {
+                state.url = urlInput.value;
+                state.videoUrl = videoUrlInput.value;
+                
+                let isValid = false;
+                if (state.inputType === 'url' && state.url) {
+                    isValid = true;
+                    state.originalContent = `the news article at ${state.url}`;
+                } else if (state.inputType === 'image' && state.imageFile) {
+                    isValid = true;
+                    state.originalContent = `the news from the provided screenshot`;
+                } else if (state.inputType === 'video' && state.videoUrl) {
+                    isValid = true;
+                    state.originalContent = `the video at ${state.videoUrl}`;
+                }
+
+                if (!isValid) {
+                    alert("Please provide input for the selected type.");
+                    return;
+                }
+                
+                state.isLoading = true;
+                state.result = null;
+                renderResults(); // Show loading spinner
+
+                // Prepare the correct prompt and request body based on the input type
+                let prompt;
+                let requestBody;
+                if (state.inputType === 'url') {
+                    prompt = getAnalysisPrompt(state.url, 'url');
+                    requestBody = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                } else if (state.inputType === 'video') {
+                    prompt = getAnalysisPrompt(state.videoUrl, 'video');
+                    requestBody = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                } else { // image
+                    const base64ImageData = await toBase64(state.imageFile);
+                    prompt = getAnalysisPrompt("", 'image');
+                    requestBody = { contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: state.imageFile.type, data: base64ImageData } }] }] };
+                }
+
+                // Call the API and parse the response
+                const text = await callGeminiAPI(requestBody);
+                if (text.startsWith('Error:')) {
+                    state.result = { verdict: "Error", summary: "Failed to analyze content.", findings: [text] };
+                } else {
+                    const verdictMatch = text.match(/Verdict: "([^"]+)"/i);
+                    const summaryMatch = text.match(/Summary: "([^"]+)"/i);
+                    const verdict = verdictMatch ? verdictMatch[1] : "Uncertain";
+                    const summary = summaryMatch ? summaryMatch[1] : "No summary available.";
+                    const findings = text.split(/Key Findings:|1\.|2\.|3\.|4\./).slice(1).map(f => f.trim()).filter(f => f) || ["Analysis could not be completed."];
+                    state.result = { verdict, summary, findings };
+                }
+                state.isLoading = false;
+                renderResults(); // Render the final results
+            }
+            
+            // Renders the results card after analysis is complete
+            function renderResults() {
+                const spinner = `<div class="spinner rounded-full h-5 w-5 border-t-2 border-b-2 border-white mr-2"></div>`;
+                analyzeBtn.innerHTML = state.isLoading ? `${spinner} Analyzing...` : 'Analyze';
+                analyzeBtn.disabled = state.isLoading;
+                aiImportanceContainer.innerHTML = '';
+
+                if (state.isLoading) {
+                    resultsContainer.innerHTML = `
+                        <div class="mt-8 p-6 bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-gray-700 flex flex-col items-center justify-center text-white space-y-4">
+                            <div class="spinner rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-400"></div>
+                            <p class="text-lg">Analyzing...</p>
+                        </div>`;
+                    return;
+                }
+
+                if (!state.result) {
+                    resultsContainer.innerHTML = '';
+                    return;
+                }
+
+                let icon, title, color;
+                switch (state.result.verdict) {
+                    case "Likely True": icon = `<div class="text-green-400 text-4xl font-bold">✓</div>`; title = "Likely True"; color = "border-green-400"; break;
+                    case "Misleading": icon = `<div class="text-yellow-400 text-4xl font-bold">!</div>`; title = "Misleading"; color = "border-yellow-400"; break;
+                    case "Likely False": icon = `<div class="text-red-400 text-4xl font-bold">✗</div>`; title = "Likely False"; color = "border-red-400"; break;
+                    default: icon = `<div class="text-gray-400 text-4xl font-bold">?</div>`; title = "Uncertain"; color = "border-gray-400";
+                }
+                
+                let findingsHTML = state.result.findings.map((finding, index) => 
+                    `<li class="cursor-pointer hover:bg-gray-700/50 p-1 rounded" data-finding-index="${index}">${finding}<div id="deep-dive-${index}" class="text-sm text-gray-400 mt-1 pl-4"></div></li>`
+                ).join('');
+
+                resultsContainer.innerHTML = `
+                    <div class="mt-8 p-6 bg-gray-800/70 backdrop-blur-md rounded-2xl border-t-4 ${color} shadow-2xl">
+                        <div class="flex items-center space-x-4">
+                            ${icon}
+                            <div>
+                                <h3 class="text-2xl font-bold text-white">${title}</h3>
+                                <p class="text-gray-300">${state.result.summary}</p>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-700">
+                            <h4 class="font-semibold text-lg text-white mb-2">Key Findings:</h4>
+                            <ul class="list-disc list-inside text-gray-300 space-y-2">${findingsHTML}</ul>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-700 flex flex-wrap gap-4">
+                            <button id="counter-btn" class="bg-indigo-500/50 text-white font-bold py-2 px-4 rounded-lg transition-all duration-300 hover:bg-indigo-500/80 flex items-center">✨ Suggest Counterarguments</button>
+                            <button id="summary-btn" class="bg-purple-500/50 text-white font-bold py-2 px-4 rounded-lg transition-all duration-300 hover:bg-purple-500/80 flex items-center">✨ Summarize a Different View</button>
+                        </div>
+                        <div id="extra-results" class="mt-4 space-y-4"></div>
+                    </div>`;
+                
+                aiImportanceContainer.innerHTML = `
+                    <div class="mt-8 p-8 bg-gray-800/60 backdrop-blur-lg rounded-2xl shadow-2xl border border-gray-700">
+                        <h3 class="text-2xl font-bold text-center mb-4 text-violet-300">The Power of AI in News Analysis</h3>
+                        <div class="grid md:grid-cols-3 gap-6 text-center">
+                            <div>
+                                <h4 class="text-lg font-bold mb-2">⚡ Speed & Scale</h4>
+                                <p class="text-gray-400">AI processes thousands of sources in seconds, a task impossible for humans, to quickly verify claims against a vast dataset.</p>
+                            </div>
+                            <div>
+                                <h4 class="text-lg font-bold mb-2">🧠 Pattern Recognition</h4>
+                                <p class="text-gray-400">AI detects subtle linguistic patterns, emotional tones, and propaganda techniques that often signal misinformation.</p>
+                            </div>
+                            <div>
+                                <h4 class="text-lg font-bold mb-2">🎯 Bias Reduction</h4>
+                                <p class="text-gray-400">By following a strict analytical process, AI minimizes the human confirmation bias that can affect manual fact-checking.</p>
+                            </div>
+                        </div>
+                    </div>`;
+
+                addResultListeners();
+            }
+
+            // Handles the logic for the extra Gemini features (Counterarguments, Summary, Deep Dive)
+            async function handleGeminiFeature(button, container, prompt, title) {
+                const originalText = button.innerHTML;
+                button.innerHTML = `<div class="spinner rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>`;
+                button.disabled = true;
+
+                const requestBody = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                const response = await callGeminiAPI(requestBody);
+                
+                container.innerHTML = `<div class="mt-4 p-4 bg-gray-900/50 rounded-lg"><h5 class="font-bold mb-2">${title}:</h5><p>${response.replace(/\n/g, '<br>')}</p></div>`;
+
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }
+
+            // Attaches event listeners to the dynamically created result elements
+            function addResultListeners() {
+                const counterBtn = document.getElementById('counter-btn');
+                const summaryBtn = document.getElementById('summary-btn');
+                const extraResultsContainer = document.getElementById('extra-results');
+                
+                counterBtn?.addEventListener('click', () => {
+                    const prompt = `The following news content was analyzed and determined to be "${state.result.verdict}": "${state.originalContent}". What are 3 potential counterarguments or alternative perspectives to this news?`;
+                    handleGeminiFeature(counterBtn, extraResultsContainer, prompt, 'Counterarguments');
+                });
+
+                summaryBtn?.addEventListener('click', () => {
+                    const prompt = `The following news content was analyzed: "${state.originalContent}". Please provide a concise summary of an opposing viewpoint.`;
+                    handleGeminiFeature(summaryBtn, extraResultsContainer, prompt, 'Opposing View Summary');
+                });
+
+                resultsContainer.querySelectorAll('[data-finding-index]').forEach(item => {
+                    item.addEventListener('click', async (e) => {
+                        const index = e.currentTarget.dataset.findingIndex;
+                        const findingText = state.result.findings[index];
+                        const deepDiveContainer = document.getElementById(`deep-dive-${index}`);
+                        
+                        if (deepDiveContainer.innerHTML) {
+                             deepDiveContainer.innerHTML = '';
+                             return;
+                        }
+
+                        deepDiveContainer.innerHTML = `<div class="spinner rounded-full h-4 w-4 border-t-2 border-b-2 border-white inline-block ml-2"></div>`;
+                        const prompt = `The following finding was made about a news article: "${findingText}". Please provide a more detailed explanation of this point.`;
+                        const requestBody = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+                        const response = await callGeminiAPI(requestBody);
+                        deepDiveContainer.innerHTML = response.replace(/\n/g, '<br>');
+                    });
+                });
+            }
+
+            // --- INITIALIZATION ---
+            // Initial render of the app and starts the carousel timer
+            render();
+            setInterval(() => {
+                state.activeIndex = (state.activeIndex + 1) % carouselItems.length;
+                if (state.isLoggedIn) {
+                    renderCarousel();
+                }
+            }, 5000);
+        });
+    </script>
 </body>
-</html>
+</html>                                                                                                                                                                              this is my project and i have to create a report book like this i give you a file help me to create report book of this project please
